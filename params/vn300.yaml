@@ -42,5 +42,8 @@ orientation_covariance: [0.01,  0.0,   0.0,
                             0.0,   0.01,  0.0,
                             0.0,   0.0,   0.01]
 
-Antenna_A_offset: [0.0, -0.17, -0.03]
-baseline_position: [0.0, 0.49, 0.0]
+# According to page 35 of vectornav VN-300 user manual doc-version 2.43
+# Position A with respect to IMU [X,Y,Z] in meters
+Antenna_A_offset: [0.0, -0.30, 0.05]
+# Position B with respect to A [X,Y,Z] in meters
+baseline_position: [0.0, 0.60, 0.0]
