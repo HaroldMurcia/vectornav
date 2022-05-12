@@ -14,7 +14,7 @@ async_output_rate: 40
 fixed_imu_rate: 800
 
 # Frame id to publish data in
-frame_id: Sensor
+frame_id: vectornav
 
 # Data publication form, true for East North Up or false for North East Down <- false is default setting
 Ecef2ENU: false
