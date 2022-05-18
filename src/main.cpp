@@ -25,7 +25,7 @@
 // We need this file for our sleep function.
 #include "vn/thread.h"
 
-ros::Publisher pubIMU, pubMag, pubGPS, pubOdom, pubTemp, pubPres, ConnStatus;
+ros::Publisher pubIMU, pubMag, pubGPS, pubOdom, pubTemp, pubPres, ConnStatus, GPS_Status;
 ros::ServiceServer resetOdomSrv;
 
 using namespace std;
@@ -49,20 +49,25 @@ vec3f baseline_position;
 XmlRpc::XmlRpcValue rpc_temp;
 
 // Global Variables
-bool flag = 1; // Falg to indicate the first time of execution
-bool flag2 = 1; // Falg to indicate the first time of execution
-bool flag1 = 0; // Falg to indicate the first time of execution
+bool flag_origin = 0;     // Flag to indicate the origin position
+bool flag_connecting = 1; // Flag to indicate the first time of execution
+bool ENU_flag;
+bool tf_ned_to_enu;
+bool frame_based_enu;
 int Perc = 0;
 vec3d pos_o;
 
 std::string frame_id;
-bool tf_ned_to_enu;
-bool frame_based_enu;
-bool ENU_flag;
 
-diagnostic_msgs::KeyValue msgKey;
+diagnostic_msgs::KeyValue msgKey_connStatus;
+diagnostic_msgs::KeyValue msgKey_GPS_Status;
 
 // ......................................................................................................FUNCTIONS
+
+void print_progress_bar(int percentage){
+    string progress = "[" + string(percentage, '|') + string(100 - percentage, ' ') + "]";
+    cout << progress << "\r\033[F\033[F\033[F" << flush;
+}
 
 void ClearCharArray(char *Data, int length){
     for (int i = 0; i < length; i++){
@@ -86,11 +91,11 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
             {
                 char Perc_char[3] = {rawData[i + 1], rawData[i + 2], rawData[i + 3]};
                 Perc = atoi(Perc_char);
-                msgKey.value = to_string(Perc);
+                msgKey_connStatus.value = to_string(Perc);
                 i = length;
                 if (Perc == 100)
                 {
-                    flag2 = 0;
+                    flag_connecting = 0;
                 }
             }
         }
@@ -253,11 +258,46 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
                     printf("\033[5A\r");
                     printf("\033[J\r");
                 }
-                printf("Startup - %3d %\n",Perc);
-                cout << "PVT_A: " << PVT_A << "\tRTK_A: " << RTK_A << endl;
-                cout << "PVT_B: " << PVT_B << "\tRTK_B: " << RTK_B << endl;
-                cout << "ComPVT: " << ComPVT << "\tComRTK: "  << ComRTK << endl;
-                cout << "CNO_A: " << CN0_A << "dBHz\tCNO_B: " << CN0_2 << "dBHz" << endl;
+                // PVT_A & PVT_B
+                msgKey_GPS_Status.value = to_string(PVT_A);
+                msgKey_GPS_Status.key = "PVT_A";
+                GPS_Status.publish(msgKey_GPS_Status);
+                msgKey_GPS_Status.value = to_string(PVT_B);
+                msgKey_GPS_Status.key = "PVT_B";
+                GPS_Status.publish(msgKey_GPS_Status);
+                // RTK_A & RTK_B
+                msgKey_GPS_Status.value = to_string(RTK_A);
+                msgKey_GPS_Status.key = "RTK_A";
+                GPS_Status.publish(msgKey_GPS_Status);
+                msgKey_GPS_Status.value = to_string(RTK_B);
+                msgKey_GPS_Status.key = "RTK_B";
+                GPS_Status.publish(msgKey_GPS_Status);
+                // ComPVT & ComRTK
+                msgKey_GPS_Status.value = to_string(ComPVT);
+                msgKey_GPS_Status.key = "ComPVT";
+                GPS_Status.publish(msgKey_GPS_Status);
+                msgKey_GPS_Status.value = to_string(ComRTK);
+                msgKey_GPS_Status.key = "ComRTK";
+                GPS_Status.publish(msgKey_GPS_Status);
+                // CN0_A & CNO_B  dBHz
+                msgKey_GPS_Status.value = to_string(CN0_A);
+                msgKey_GPS_Status.key = "CN0_A dBHz";
+                GPS_Status.publish(msgKey_GPS_Status);
+                msgKey_GPS_Status.value = to_string(CN0_2);
+                msgKey_GPS_Status.key = "CN0_2 dBHz";
+                GPS_Status.publish(msgKey_GPS_Status);
+                int percent_bar = Perc;
+                if (percent_bar>100){
+                    percent_bar = percent_bar/100;
+                }
+                if (flag_connecting==1) {
+                    printf("Startup - %3d %\n", Perc);
+                    cout << "\tPVT_A: " << PVT_A << "\tRTK_A: " << RTK_A << endl;
+                    cout << "\tPVT_B: " << PVT_B << "\tRTK_B: " << RTK_B << endl;
+                    cout << "\tComPVT: " << ComPVT << "\tComRTK: " << ComRTK << endl;
+                    cout << "\tCNO_A: " << CN0_A << "dBHz\tCNO_B: " << CN0_2 << "dBHz" << endl;
+                    print_progress_bar(round(percent_bar));
+                }
             }
         }
         else
@@ -459,11 +499,10 @@ void asciiOrBinaryAsyncMessageReceived(void* userData, Packet& p, size_t index){
         msgOdom.header.stamp = msgIMU.header.stamp;
         msgOdom.header.frame_id = msgIMU.header.frame_id;
         vec3d pos = cd.positionEstimatedEcef();
-        if (!flag1){
+        if (!flag_origin){
             pos_o = pos;
-            flag1 = 1;
+            flag_origin = 1;
         }
-        //pos -= pos_o;
         if (ENU_flag){
             pos = ECEF2ENU(pos,lla);
         }
@@ -506,13 +545,14 @@ int main(int argc, char *argv[]) {
     ros::NodeHandle pn("~");
 
     // Publishers
-    pubIMU = n.advertise<sensor_msgs::Imu>("vectornav/IMU", 1000);
-    pubMag = n.advertise<sensor_msgs::MagneticField>("vectornav/Mag", 1000);
-    pubGPS = n.advertise<sensor_msgs::NavSatFix>("vectornav/GPS", 1000);
-    pubOdom = n.advertise<nav_msgs::Odometry>("vectornav/Odom", 1000);
-    pubTemp = n.advertise<sensor_msgs::Temperature>("vectornav/Temp", 1000);
-    pubPres = n.advertise<sensor_msgs::FluidPressure>("vectornav/Pres", 1000);
+    pubIMU     = n.advertise<sensor_msgs::Imu>("vectornav/IMU", 1000);
+    pubMag     = n.advertise<sensor_msgs::MagneticField>("vectornav/Mag", 1000);
+    pubGPS     = n.advertise<sensor_msgs::NavSatFix>("vectornav/GPS", 1000);
+    pubOdom    = n.advertise<nav_msgs::Odometry>("vectornav/Odom", 1000);
+    pubTemp    = n.advertise<sensor_msgs::Temperature>("vectornav/Temp", 1000);
+    pubPres    = n.advertise<sensor_msgs::FluidPressure>("vectornav/Pres", 1000);
     ConnStatus = n.advertise<diagnostic_msgs::KeyValue>("vectornav/ConnStatus", 1000);
+    GPS_Status = n.advertise<diagnostic_msgs::KeyValue>("vectornav/GPS_Status", 1000);
 
     // Serial Port Settings
     string SensorPort;
@@ -531,7 +571,7 @@ int main(int argc, char *argv[]) {
     pn.param<int>("async_output_rate", async_output_rate, 20);
     pn.param<std::string>("serial_port", SensorPort, "/dev/ttyUSB0");
     pn.param<int>("serial_baud", SensorBaudrate, 115200);
-    pn.param<int>("fixed_imu_rate", SensorImuRate, 800);
+    pn.param<int>("fixed_imu_rate", SensorImuRate, 400);
 
     //Call to set covariances
     if (pn.getParam("linear_accel_covariance", rpc_temp)) {
@@ -557,6 +597,7 @@ int main(int argc, char *argv[]) {
     // and interact with a VectorNav sensor.
 
     // Now let's create a VnSensor object and use it to connect to our sensor.
+    // vnprog/src/sensors.cpp
     VnSensor vs;
     vs.connect(SensorPort, SensorBaudrate);
 
@@ -581,17 +622,18 @@ int main(int argc, char *argv[]) {
     vs.writeAsyncDataOutputFrequency(async_output_rate); // see table 6.2.8
     uint32_t newHz = vs.readAsyncDataOutputFrequency();
 
-    //added by Harold
+    //added by Harold. Redundant variable to ensure
     ImuRateConfigurationRegister IMUR = vs.readImuRateConfiguration();
     IMUR.imuRate = SensorImuRate;
     vs.writeImuRateConfiguration(IMUR);
     IMUR = vs.readImuRateConfiguration();
 
-    /* VPE Resgister */
+    /* VPE Resgister - section 9.3.1 */
     VpeBasicControlRegister vpeReg = vs.readVpeBasicControl();
     // Enable *********************************************************************
     vpeReg.enable = VPEENABLE_ENABLE;
     // Heading Mode ***************************************************************
+    // Section 3.4.3 de VN100manual.pdf
     vpeReg.headingMode = HEADINGMODE_RELATIVE;
     // vpeReg.headingMode = HEADINGMODE_ABSOLUTE;
     // vpeReg.headingMode = HEADINGMODE_INDOOR;
@@ -603,33 +645,42 @@ int main(int argc, char *argv[]) {
     vpeReg.tuningMode = VPEMODE_MODE1;
     vs.writeVpeBasicControl(vpeReg);
 
-    /* INS Resgister */
+    /* INS Resgister Section 10.3.1 */
     InsBasicConfigurationRegisterVn300 InsReg = vs.readInsBasicConfigurationVn300();
     // Scenario *******************************************************************
     //InsReg.scenario = SCENARIO_AHRS;
     //InsReg.scenario = SCENARIO_INSWITHPRESSURE;
     //InsReg.scenario = SCENARIO_INSWITHOUTPRESSURE;
-    InsReg.scenario = SCENARIO_GPSMOVINGBASELINEDYNAMIC;
+    InsReg.scenario = SCENARIO_GPSMOVINGBASELINEDYNAMIC; // GNSS moving baseline for dynamic applications.
     //InsReg.scenario = SCENARIO_GPSMOVINGBASELINESTATIC;
     // Ahrs Aiding ****************************************************************
+    //AHRS aiding provides the ability to switch to using the magnetometer to stabilize heading during times when
+    // the device is stationary and the GNSS compass is not available. AHRS aiding also helps to eliminate large
+    // updates in the attitude solution during times when heading is weakly observable, such as at startup.
     InsReg.ahrsAiding = 1;
     // Estimation Base line *******************************************************
+    // Enables GNSS compass baseline estimation by INS.
     InsReg.estBaseline = 1;
-    vs.writeInsBasicConfigurationVn300(InsReg); //added by Harold
+    vs.writeInsBasicConfigurationVn300(InsReg);
 
-    /* HIS Calibration */
+    /* HSI Calibration Section 11.1.1 Magnetometer Calibration Control */
     MagnetometerCalibrationControlRegister hsiReg = vs.readMagnetometerCalibrationControl();
     // HSI Mode *******************************************************************
+    // Controls the mode of operation for the onboard real-time magnetometer hard/soft iron compensation algorithm.
+    // RUN: Runs the real-time hard/soft iron calibration. The algorithm will continue using its existing solution.
+    // The algorithm can be started and stopped at any time by switching between the HSI_OFF and HSI_RUN state.
     hsiReg.hsiMode = HSIMODE_RUN;
-    //hsiReg.hsiMode = HSIMODE_OFF;
+    //hsiReg.hsiMode = HSIMODE_OFF; // Real-time hard/soft iron calibration algorithm is turned off.
     // HSI Output *****************************************************************
-    hsiReg.hsiOutput = HSIOUTPUT_USEONBOARD;
-    //hsiReg.hsiOutput = HSIOUTPUT_NOONBOARD;
-    vs.writeMagnetometerCalibrationControl(hsiReg);  //added by Harold
+    // Controls the type of measurements that are provided as outputs from the magnetometer sensor and also
+    //subsequently used in the attitude filter.
+    hsiReg.hsiOutput = HSIOUTPUT_USEONBOARD;  // Onboard HSI is applied to the magnetic measurements
+    //hsiReg.hsiOutput = HSIOUTPUT_NOONBOARD; // Onboard HSI is not applied to the magnetic measurements.
+    vs.writeMagnetometerCalibrationControl(hsiReg);
 
     /* BaseLine Configuration */
     /// BaseLine and Antenna A offset Configuration
-    vs.writeGpsAntennaOffset(Antenna_A_offset);
+    vs.writeGpsAntennaOffset(Antenna_A_offset); // from YAML parameters
     GpsCompassBaselineRegister baseli_config = vs.readGpsCompassBaseline();
     baseli_config.position = baseline_position;
     // Uncertainty calculation
@@ -640,15 +691,14 @@ int main(int argc, char *argv[]) {
             max = baseli_config.position[i];
         }
     }
-    baseli_config.uncertainty = {max * 0.025, max * 0.025, max * 0.025};
+    baseli_config.uncertainty = {max*0.05, max*0.05, max*0.05}; //5%
     vs.writeGpsCompassBaseline(baseli_config);
-
     /* Save on flash memory all configurations */
     vs.writeSettings();
 
-    /* --------------------------------------- */
-    /* ------- Read all configurations ------- */
-    /* --------------------------------------- */
+    /* ------------------------------------------------------------------------------ */
+    /* ------- Read all configurations ---------------------------------------------- */
+    /* ------------------------------------------------------------------------------ */
     ROS_INFO("Async output frequency:\t%d Hz", newHz);
     ROS_INFO("IMU Frequency:\t\t%d Hz", IMUR.imuRate);
     /* VPE Resgister */
@@ -660,13 +710,13 @@ int main(int argc, char *argv[]) {
     ROS_INFO("Tuning Mode:\t%d", vpeReg.tuningMode);
     /* INS Resgister */
     ROS_INFO("...INS Resgister....................................................");
-    InsReg = vs.readInsBasicConfigurationVn300(); //added by Harold
+    InsReg = vs.readInsBasicConfigurationVn300();
     ROS_INFO("Scenario:\t%d", InsReg.scenario);
     ROS_INFO("AHRS Aiding:\t%d", InsReg.ahrsAiding);
     ROS_INFO("Base Line:\t%d", InsReg.estBaseline);
     /* HIS Calibration */
     ROS_INFO("...HIS Calibration..................................................");
-    hsiReg = vs.readMagnetometerCalibrationControl();//added by Harold
+    hsiReg = vs.readMagnetometerCalibrationControl();
     ROS_INFO("Mode:\t%d", hsiReg.hsiMode);
     ROS_INFO("Output:\t%d\n", hsiReg.hsiOutput);
     /* BaseLine Configuration */
@@ -716,30 +766,38 @@ int main(int argc, char *argv[]) {
     | INSGROUP_ACCELECEF,
     GPSGROUP_NONE);
 
-    msgKey.key = "ConnStatus[%]";
+    msgKey_connStatus.key = "ConnStatus[%]";
     vs.registerRawDataReceivedHandler(NULL, ConnectionState);
     ROS_INFO("Initial calibration ................................................");
 
-    while (flag && flag2)
+    while (flag_connecting && ros::ok())
     {
-        vs.send("$VNRRG,98");
-        vs.send("$VNRRG,86");
-        ConnStatus.publish(msgKey);
+        vs.send("$VNRRG,98"); //GNSS Compass Startup Status. Section 8.3.2
+        vs.send("$VNRRG,86"); //GNSS Compass Signal Health Status. Section 8.3.3
+        ConnStatus.publish(msgKey_connStatus);
     }
 
-    vs.unregisterRawDataReceivedHandler();
-    Thread::sleepSec(2);
-    vs.writeBinaryOutput1(bor);
+    if(flag_connecting==1){
+        cout << endl;
+        cout << endl;
+        cout << endl;
+        cout << endl;
+        ROS_INFO("\t Aborted connection");
+    }else{
+        vs.unregisterRawDataReceivedHandler();
+        Thread::sleepSec(2);
+        vs.writeBinaryOutput1(bor);
+        vs.registerAsyncPacketReceivedHandler(NULL, asciiOrBinaryAsyncMessageReceived);
+        ROS_INFO("bound..............................................................");
+    }
 
-    vs.registerAsyncPacketReceivedHandler(NULL, asciiOrBinaryAsyncMessageReceived);
-    ROS_INFO("bound..............................................................");
-    while (!flag2)
+    while (!flag_connecting && ros::ok())
     {
-        ConnStatus.publish(msgKey);
+        ConnStatus.publish(msgKey_connStatus);
     }
 
     vs.unregisterAsyncPacketReceivedHandler();
     vs.disconnect();
-
+    cout << "\tBye-bye" << endl;
     return 0;
 }
