@@ -684,14 +684,8 @@ int main(int argc, char *argv[]) {
     GpsCompassBaselineRegister baseli_config = vs.readGpsCompassBaseline();
     baseli_config.position = baseline_position;
     // Uncertainty calculation
-    float max = 0;
-    for (int i = 0; i < 3; i++)
-    {
-        if (baseli_config.position[i] > max) {
-            max = baseli_config.position[i];
-        }
-    }
-    baseli_config.uncertainty = {max*0.05, max*0.05, max*0.05}; //5%
+    float uncertainty_offset = 0.01;
+    baseli_config.uncertainty = {baseli_config.position[0]*0.05+uncertainty_offset, baseli_config.position[1]*0.05+uncertainty_offset, baseli_config.position[2]*0.05+uncertainty_offset}; //5%
     vs.writeGpsCompassBaseline(baseli_config);
     /* Save on flash memory all configurations */
     vs.writeSettings();
