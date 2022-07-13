@@ -291,11 +291,29 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
                     percent_bar = percent_bar/100;
                 }
                 if (flag_connecting==1) {
-                    printf("Startup - %3d %\n", Perc);
+                    printf("PVT: Number of satellites available for PVT solution\n");
+                    printf("RTK: Number of satellites available for RTK solution\n");
+                    printf("ComPVT: Common satellites for A and B in PVT\n");
+                    printf("ComRTK: Common satellites for A and B in RTK\n");
+                    printf("CNO: Highest CNO reported\n");
+                    printf("\tStartup - %3d %\n", Perc); // Section 9.1.2
                     cout << "\tPVT_A: " << PVT_A << "\tRTK_A: " << RTK_A << endl;
                     cout << "\tPVT_B: " << PVT_B << "\tRTK_B: " << RTK_B << endl;
                     cout << "\tComPVT: " << ComPVT << "\tComRTK: " << ComRTK << endl;
                     cout << "\tCNO_A: " << CN0_A << "dBHz\tCNO_B: " << CN0_2 << "dBHz" << endl;
+                    if (PVT_A >=12 & PVT_B>=12 & CN0_A>=47 & CN0_2>=47 & ComPVT>=12 & ComRTK>=12){
+                        printf("\tExcellent Conditions\n");
+                    }else if (PVT_A >=8 & PVT_A<=11 & PVT_B>=8 & PVT_B<=11 & CN0_A>=40 & CN0_A<=46 & CN0_2>=40 & CN0_2<=46 & ComPVT>=9 & ComPVT<=11 & ComRTK>=9 & ComRTK<=11)
+                    {
+                        printf("\tFair Conditions\n");
+                    }else if(PVT_A <=8 & PVT_B<=7 & CN0_A<40 & CN0_2<40 & ComPVT<9 & ComRTK<9 )
+                    {
+                        printf("\tPoor Conditions\n");
+                    }else{
+                        printf("\tVery Poor Conditions\n");
+                    }
+                    // According to sec 8.3.3 GNSS Compass Signal Health Status
+                    // Progress bar
                     print_progress_bar(round(percent_bar));
                 }
             }
