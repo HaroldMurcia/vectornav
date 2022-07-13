@@ -589,7 +589,7 @@ int main(int argc, char *argv[]) {
     pn.param<int>("async_output_rate", async_output_rate, 20);
     pn.param<std::string>("serial_port", SensorPort, "/dev/ttyUSB0");
     pn.param<int>("serial_baud", SensorBaudrate, 115200);
-    pn.param<int>("fixed_imu_rate", SensorImuRate, 400);
+    pn.param<int>("fixed_imu_rate", SensorImuRate, 800);
 
     //Call to set covariances
     if (pn.getParam("linear_accel_covariance", rpc_temp)) {
@@ -617,7 +617,57 @@ int main(int argc, char *argv[]) {
     // Now let's create a VnSensor object and use it to connect to our sensor.
     // vnprog/src/sensors.cpp
     VnSensor vs;
-    vs.connect(SensorPort, SensorBaudrate);
+    //vs.connect(SensorPort, SensorBaudrate);
+
+    // NEW block
+    // Default baudrate variable
+    int defaultBaudrate;
+    // Run through all of the acceptable baud rates until we are connected
+    // Looping in case someone has changed the default
+    bool baudSet = false;
+    while(!baudSet){
+        // Make this variable only accessible in the while loop
+        static int i = 0;
+        defaultBaudrate = vs.supportedBaudrates()[i];
+        ROS_INFO("Connecting with default at %d", defaultBaudrate);
+        // Default response was too low and retransmit time was too long by default.
+        // They would cause errors
+        //vs.setResponseTimeoutMs(1000); // Wait for up to 1000 ms for response
+        //vs.setRetransmitDelayMs(50);  // Retransmit every 50 ms
+
+        // Acceptable baud rates 9600, 19200, 38400, 57600, 128000, 115200, 230400, 460800, 921600
+        // Data sheet says 128000 is a valid baud rate. It doesn't work with the VN100 so it is excluded.
+        // All other values seem to work fine.
+        try{
+            // Connect to sensor at it's default rate
+            if(defaultBaudrate != 128000 && SensorBaudrate != 128000)
+            {
+                vs.connect(SensorPort, defaultBaudrate);
+                // Issues a change baudrate to the VectorNav sensor and then
+                // reconnects the attached serial port at the new baudrate.
+                vs.changeBaudRate(SensorBaudrate);
+                // Only makes it here once we have the default correct
+                ROS_INFO("Connected baud rate is %d",vs.baudrate());
+                baudSet = true;
+            }
+        }
+            // Catch all oddities
+        catch(...){
+            // Disconnect if we had the wrong default and we were connected
+            vs.disconnect();
+            ros::Duration(0.2).sleep();
+        }
+        // Increment the default iterator
+        i++;
+        // There are only 9 available data rates, if no connection
+        // made yet possibly a hardware malfunction?
+        if(i > 8)
+        {
+            break;
+        }
+    }
+    // ................
+
 
     // Now we verify connection (Should be good if we made it this far)
     if (vs.verifySensorConnectivity()) {
@@ -760,40 +810,38 @@ int main(int argc, char *argv[]) {
     }
 
     BinaryOutputRegister bor(
-    ASYNCMODE_PORT1,
-    SensorImuRate / async_output_rate,  // update rate [ms]
-    COMMONGROUP_QUATERNION
-    | COMMONGROUP_ANGULARRATE
-    | COMMONGROUP_POSITION
-    | COMMONGROUP_ACCEL
-    | COMMONGROUP_MAGPRES,
-    TIMEGROUP_NONE,
-    IMUGROUP_NONE,
-    GPSGROUP_NONE,
-    ATTITUDEGROUP_YPRU, //<-- returning yaw pitch roll uncertainties
-    INSGROUP_INSSTATUS
-    | INSGROUP_POSLLA
-    | INSGROUP_POSECEF
-    | INSGROUP_VELBODY
-    | INSGROUP_ACCELECEF,
-    GPSGROUP_NONE);
+            ASYNCMODE_PORT1,
+            SensorImuRate / async_output_rate,  // update rate [ms]
+            COMMONGROUP_QUATERNION
+                | COMMONGROUP_ANGULARRATE
+                | COMMONGROUP_POSITION
+                | COMMONGROUP_ACCEL
+                | COMMONGROUP_MAGPRES,
+            TIMEGROUP_NONE,
+            IMUGROUP_NONE,
+            GPSGROUP_NONE,
+            ATTITUDEGROUP_YPRU, //<-- returning yaw pitch roll uncertainties
+            INSGROUP_INSSTATUS
+                | INSGROUP_POSLLA
+                | INSGROUP_POSECEF
+                | INSGROUP_VELBODY
+                | INSGROUP_ACCELECEF,
+            GPSGROUP_NONE);
 
     msgKey_connStatus.key = "ConnStatus[%]";
     vs.registerRawDataReceivedHandler(NULL, ConnectionState);
     ROS_INFO("Initial calibration ................................................");
 
+    /*
     while (flag_connecting && ros::ok())
     {
         vs.send("$VNRRG,98"); //GNSS Compass Startup Status. Section 8.3.2
         vs.send("$VNRRG,86"); //GNSS Compass Signal Health Status. Section 8.3.3
         ConnStatus.publish(msgKey_connStatus);
     }
-
+*/
+    flag_connecting=0;
     if(flag_connecting==1){
-        cout << endl;
-        cout << endl;
-        cout << endl;
-        cout << endl;
         ROS_INFO("\t Aborted connection");
     }else{
         vs.unregisterRawDataReceivedHandler();
@@ -802,7 +850,7 @@ int main(int argc, char *argv[]) {
         vs.registerAsyncPacketReceivedHandler(NULL, asciiOrBinaryAsyncMessageReceived);
         ROS_INFO("bound..............................................................");
     }
-
+    ROS_INFO("before while..");
     while (!flag_connecting && ros::ok())
     {
         ConnStatus.publish(msgKey_connStatus);
