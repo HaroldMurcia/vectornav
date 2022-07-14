@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <inttypes.h>
 
 // ROS Libraries
 #include "ros/ros.h"
@@ -25,7 +26,7 @@
 // We need this file for our sleep function.
 #include "vn/thread.h"
 
-ros::Publisher pubIMU, pubMag, pubGPS, pubOdom, pubTemp, pubPres, ConnStatus, GPS_Status;
+ros::Publisher pubIMU, pubMag, pubGPS, pubOdom, pubTemp, pubPres, ConnStatus, GPS_Status, pubTimeSyncIn, pubTimeGps, pubTimeGpsPps ;
 ros::ServiceServer resetOdomSrv;
 
 using namespace std;
@@ -61,6 +62,12 @@ std::string frame_id;
 
 diagnostic_msgs::KeyValue msgKey_connStatus;
 diagnostic_msgs::KeyValue msgKey_GPS_Status;
+diagnostic_msgs::KeyValue msgKey_vnTimeSyncIn;
+diagnostic_msgs::KeyValue msgKey_vnTimeSyncIn_timeStamp_sec;
+diagnostic_msgs::KeyValue msgKey_vnTimeGpsPps;
+diagnostic_msgs::KeyValue msgKey_vnTimeGpsPps_timeStamp_sec;
+diagnostic_msgs::KeyValue msgKey_vnTimeGps;
+diagnostic_msgs::KeyValue msgKey_vnTimeGps_timeStamp_sec;
 
 // ......................................................................................................FUNCTIONS
 
@@ -394,6 +401,37 @@ void asciiOrBinaryAsyncMessageReceived(void* userData, Packet& p, size_t index){
     nav_msgs::Odometry msgOdom;
     sensor_msgs::Temperature msgTemp;
     sensor_msgs::FluidPressure msgPres;
+    // Time
+    if (cd.hasTimeGpsPps()){
+        uint64_t TimeGPS_PPS;
+        TimeGPS_PPS = cd.timeGpsPps();  //nano secs since the last GPS PPS trigger
+        msgKey_vnTimeGpsPps.key = "TimeGPS_PPS";
+        msgKey_vnTimeGpsPps.value = std::to_string(TimeGPS_PPS);
+        msgKey_vnTimeGpsPps_timeStamp_sec.key = "TimeStamp_sec";
+        msgKey_vnTimeGpsPps_timeStamp_sec.value = std::to_string(ros::Time::now().toSec());
+        pubTimeGpsPps.publish(msgKey_vnTimeGpsPps);
+        pubTimeGpsPps.publish(msgKey_vnTimeGpsPps_timeStamp_sec);
+    }
+    if (cd.hasTimeSyncIn()){
+        uint64_t TimeSyncIn;
+        TimeSyncIn = cd.timeSyncIn();  //nano secs e time since the last SyncIn trigger
+        msgKey_vnTimeSyncIn.key = "TimeSyncIn";
+        msgKey_vnTimeSyncIn.value = std::to_string(TimeSyncIn);
+        msgKey_vnTimeSyncIn_timeStamp_sec.key = "TimeSyncIn_sec";
+        msgKey_vnTimeSyncIn_timeStamp_sec.value = std::to_string(ros::Time::now().toSec());
+        pubTimeSyncIn.publish(msgKey_vnTimeSyncIn);
+        pubTimeSyncIn.publish(msgKey_vnTimeSyncIn_timeStamp_sec);
+    }
+    if (cd.hasTimeGps()){
+        uint64_t TimeGPS;
+        TimeGPS = cd.timeGps(); // The absolute GPS time since start of GPS epoch 1980 expressed in nano seconds
+        msgKey_vnTimeGps.key = "TimeGPS";
+        msgKey_vnTimeGps.value = std::to_string(TimeGPS);
+        msgKey_vnTimeGps_timeStamp_sec.key = "TimeStamp";
+        msgKey_vnTimeGps_timeStamp_sec.value = std::to_string(ros::Time::now().toSec());
+        pubTimeGps.publish(msgKey_vnTimeGps);
+        pubTimeGps.publish(msgKey_vnTimeGps_timeStamp_sec);
+    }
     // IMU
     msgIMU.header.stamp = ros::Time::now();
     msgIMU.header.frame_id = frame_id;
@@ -571,6 +609,8 @@ int main(int argc, char *argv[]) {
     pubPres    = n.advertise<sensor_msgs::FluidPressure>("vectornav/Pres", 1000);
     ConnStatus = n.advertise<diagnostic_msgs::KeyValue>("vectornav/ConnStatus", 1000);
     GPS_Status = n.advertise<diagnostic_msgs::KeyValue>("vectornav/GPS_Status", 1000);
+    pubTimeSyncIn = n.advertise<diagnostic_msgs::KeyValue>("vectornav/TimeSyncIn", 1000);
+    pubTimeGpsPps = n.advertise<diagnostic_msgs::KeyValue>("vectornav/TimeGpsPps", 1000);
 
     // Serial Port Settings
     string SensorPort;
@@ -813,6 +853,7 @@ int main(int argc, char *argv[]) {
             SensorImuRate / async_output_rate,  // update rate [ms]
             COMMONGROUP_QUATERNION
                 | COMMONGROUP_TIMEGPSPPS
+                | COMMONGROUP_TIMESYNCIN
                 | COMMONGROUP_ANGULARRATE
                 | COMMONGROUP_POSITION
                 | COMMONGROUP_ACCEL
