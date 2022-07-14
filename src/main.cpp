@@ -617,7 +617,6 @@ int main(int argc, char *argv[]) {
     // Now let's create a VnSensor object and use it to connect to our sensor.
     // vnprog/src/sensors.cpp
     VnSensor vs;
-    //vs.connect(SensorPort, SensorBaudrate);
 
     // NEW block
     // Default baudrate variable
@@ -681,7 +680,7 @@ int main(int argc, char *argv[]) {
     ROS_INFO("Model Number: %s\n", mn.c_str());
 
     ROS_INFO("Restarting factory configuration .....................................");
-    vs.restoreFactorySettings();
+    //vs.restoreFactorySettings();
     Thread::sleepSec(3);
 
     // Let's do some simple reconfiguration of the sensor. As it comes from the
@@ -813,6 +812,7 @@ int main(int argc, char *argv[]) {
             ASYNCMODE_PORT1,
             SensorImuRate / async_output_rate,  // update rate [ms]
             COMMONGROUP_QUATERNION
+                | COMMONGROUP_TIMEGPSPPS
                 | COMMONGROUP_ANGULARRATE
                 | COMMONGROUP_POSITION
                 | COMMONGROUP_ACCEL
@@ -840,7 +840,7 @@ int main(int argc, char *argv[]) {
         ConnStatus.publish(msgKey_connStatus);
     }
 */
-    flag_connecting=0;
+    flag_connecting=0;   // Flag connecting = 0 forces avoiud GNSS calibration
     if(flag_connecting==1){
         ROS_INFO("\t Aborted connection");
     }else{
@@ -850,7 +850,7 @@ int main(int argc, char *argv[]) {
         vs.registerAsyncPacketReceivedHandler(NULL, asciiOrBinaryAsyncMessageReceived);
         ROS_INFO("bound..............................................................");
     }
-    ROS_INFO("before while..");
+
     while (!flag_connecting && ros::ok())
     {
         ConnStatus.publish(msgKey_connStatus);
