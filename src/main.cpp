@@ -26,7 +26,14 @@
 // We need this file for our sleep function.
 #include "vn/thread.h"
 
-ros::Publisher pubIMU, pubMag, pubGPS, pubOdom, pubTemp, pubPres, ConnStatus, GPS_Status, pubTimeSyncIn, pubTimeGps, pubTimeGpsPps ;
+// Own MSGs
+#include "vectornav/vn_time.h"
+#include "vectornav/ins_status.h"
+#include "vectornav/gps_conn_status.h"
+#include "vectornav/ecef_uncert.h"
+
+
+ros::Publisher pubIMU, pubMag, pubGPS, pubOdom, pubTemp, pubPres, pubGPSConStatus, pubTimeSyncIn, pubTimeGps, pubTimeGpsPps, pubINSstatus, pubECEFun;
 ros::ServiceServer resetOdomSrv;
 
 using namespace std;
@@ -52,22 +59,18 @@ XmlRpc::XmlRpcValue rpc_temp;
 // Global Variables
 bool flag_origin = 0;     // Flag to indicate the origin position
 bool flag_connecting = 1; // Flag to indicate the first time of execution
+bool flag_startup_header_printed = false; // Flag to avoid overprint in console
 bool ENU_flag;
 bool tf_ned_to_enu;
 bool frame_based_enu;
+bool wait_for_GNSS_startup;
 int Perc = 0;
 vec3d pos_o;
 
 std::string frame_id;
 
-diagnostic_msgs::KeyValue msgKey_connStatus;
-diagnostic_msgs::KeyValue msgKey_GPS_Status;
-diagnostic_msgs::KeyValue msgKey_vnTimeSyncIn;
-diagnostic_msgs::KeyValue msgKey_vnTimeSyncIn_timeStamp_sec;
-diagnostic_msgs::KeyValue msgKey_vnTimeGpsPps;
-diagnostic_msgs::KeyValue msgKey_vnTimeGpsPps_timeStamp_sec;
-diagnostic_msgs::KeyValue msgKey_vnTimeGps;
-diagnostic_msgs::KeyValue msgKey_vnTimeGps_timeStamp_sec;
+vectornav::gps_conn_status _connStatus;
+
 
 // ......................................................................................................FUNCTIONS
 
@@ -89,6 +92,7 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
     int j = 0;
     //cout << rawData << endl;
     // Decode register 98
+    _connStatus.header.stamp = ros::Time::now();
     for (int i = 0; i < length; i++)
     {
         if ((rawData[i] == header1[j]))
@@ -98,7 +102,7 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
             {
                 char Perc_char[3] = {rawData[i + 1], rawData[i + 2], rawData[i + 3]};
                 Perc = atoi(Perc_char);
-                msgKey_connStatus.value = to_string(Perc);
+                _connStatus.conn_status_percent = Perc;
                 i = length;
                 if (Perc == 100)
                 {
@@ -113,7 +117,7 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
     }
 
     // Decode register 86
-    float PVT_A = 0, RTK_A = 0, CN0_A = 0, PVT_B = 0, RTK_B = 0, CN0_2 = 0, ComPVT = 0, ComRTK = 0;
+    float PVT_A = 0, RTK_A = 0, CN0_A = 0, PVT_B = 0, RTK_B = 0, CN0_B = 0, ComPVT = 0, ComRTK = 0;
     j = 0;
     char aux[5];  // Save part of data of the message
     int aux1;     // Save the actual index
@@ -211,7 +215,7 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
                         i += (k + 1);
                         k = 0;
                     }
-                    // CN0_2
+                    // CN0_B
                     if ((rawData[i + k] != ',') && (flag3 == 5))
                     {
                         //cout << rawData[i+k] << endl;
@@ -219,10 +223,10 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
                     }
                     else if ((rawData[i + k] == ',') && (flag3 == 5))
                     {
-                        CN0_2 = atof(aux);
+                        CN0_B = atof(aux);
                         //cout << aux << endl;
                         ClearCharArray(aux, 5);
-                        //cout << CN0_2 << endl;
+                        //cout << CN0_B << endl;
                         flag3++;
                         i += (k + 1);
                         k = 0;
@@ -266,54 +270,41 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
                     printf("\033[J\r");
                 }
                 // PVT_A & PVT_B
-                msgKey_GPS_Status.value = to_string(PVT_A);
-                msgKey_GPS_Status.key = "PVT_A";
-                GPS_Status.publish(msgKey_GPS_Status);
-                msgKey_GPS_Status.value = to_string(PVT_B);
-                msgKey_GPS_Status.key = "PVT_B";
-                GPS_Status.publish(msgKey_GPS_Status);
+                _connStatus.pvt_a = PVT_A;
+                _connStatus.pvt_b = PVT_B;
                 // RTK_A & RTK_B
-                msgKey_GPS_Status.value = to_string(RTK_A);
-                msgKey_GPS_Status.key = "RTK_A";
-                GPS_Status.publish(msgKey_GPS_Status);
-                msgKey_GPS_Status.value = to_string(RTK_B);
-                msgKey_GPS_Status.key = "RTK_B";
-                GPS_Status.publish(msgKey_GPS_Status);
+                _connStatus.rtk_a = RTK_A;
+                _connStatus.rtk_b = RTK_B;
                 // ComPVT & ComRTK
-                msgKey_GPS_Status.value = to_string(ComPVT);
-                msgKey_GPS_Status.key = "ComPVT";
-                GPS_Status.publish(msgKey_GPS_Status);
-                msgKey_GPS_Status.value = to_string(ComRTK);
-                msgKey_GPS_Status.key = "ComRTK";
-                GPS_Status.publish(msgKey_GPS_Status);
+                _connStatus.com_pvt = ComPVT;
+                _connStatus.com_rtk = ComRTK;
                 // CN0_A & CNO_B  dBHz
-                msgKey_GPS_Status.value = to_string(CN0_A);
-                msgKey_GPS_Status.key = "CN0_A dBHz";
-                GPS_Status.publish(msgKey_GPS_Status);
-                msgKey_GPS_Status.value = to_string(CN0_2);
-                msgKey_GPS_Status.key = "CN0_2 dBHz";
-                GPS_Status.publish(msgKey_GPS_Status);
+                _connStatus.cn0_a = CN0_A;
+                _connStatus.cn0_b = CN0_B;
                 int percent_bar = Perc;
                 if (percent_bar>100){
                     percent_bar = percent_bar/100;
                 }
                 if (flag_connecting==1) {
-                    printf("PVT: Number of satellites available for PVT solution\n");
-                    printf("RTK: Number of satellites available for RTK solution\n");
-                    printf("ComPVT: Common satellites for A and B in PVT\n");
-                    printf("ComRTK: Common satellites for A and B in RTK\n");
-                    printf("CNO: Highest CNO reported\n");
+                    if (flag_startup_header_printed==false) {
+                        printf("PVT: Number of satellites available for PVT solution\n");
+                        printf("RTK: Number of satellites available for RTK solution\n");
+                        printf("ComPVT: Common satellites for A and B in PVT\n");
+                        printf("ComRTK: Common satellites for A and B in RTK\n");
+                        printf("CNO: Highest CNO reported\n");
+                        flag_startup_header_printed = true;
+                    }
                     printf("\tStartup - %3d %\n", Perc); // Section 9.1.2
                     cout << "\tPVT_A: " << PVT_A << "\tRTK_A: " << RTK_A << endl;
                     cout << "\tPVT_B: " << PVT_B << "\tRTK_B: " << RTK_B << endl;
                     cout << "\tComPVT: " << ComPVT << "\tComRTK: " << ComRTK << endl;
-                    cout << "\tCNO_A: " << CN0_A << "dBHz\tCNO_B: " << CN0_2 << "dBHz" << endl;
-                    if (PVT_A >=12 & PVT_B>=12 & CN0_A>=47 & CN0_2>=47 & ComPVT>=12 & ComRTK>=12){
+                    cout << "\tCNO_A: " << CN0_A << "dBHz\tCNO_B: " << CN0_B << "dBHz" << endl;
+                    if (PVT_A >=12 & PVT_B>=12 & CN0_A>=47 & CN0_B>=47 & ComPVT>=12 & ComRTK>=12){
                         printf("\tExcellent Conditions\n");
-                    }else if (PVT_A >=8 & PVT_A<=11 & PVT_B>=8 & PVT_B<=11 & CN0_A>=40 & CN0_A<=46 & CN0_2>=40 & CN0_2<=46 & ComPVT>=9 & ComPVT<=11 & ComRTK>=9 & ComRTK<=11)
+                    }else if (PVT_A >=8 & PVT_A<=11 & PVT_B>=8 & PVT_B<=11 & CN0_A>=40 & CN0_A<=46 & CN0_B>=40 & CN0_B<=46 & ComPVT>=9 & ComPVT<=11 & ComRTK>=9 & ComRTK<=11)
                     {
                         printf("\tFair Conditions\n");
-                    }else if(PVT_A <=8 & PVT_B<=7 & CN0_A<40 & CN0_2<40 & ComPVT<9 & ComRTK<9 )
+                    }else if(PVT_A <=8 & PVT_B<=7 & CN0_A<40 & CN0_B<40 & ComPVT<9 & ComRTK<9 )
                     {
                         printf("\tPoor Conditions\n");
                     }else{
@@ -322,6 +313,10 @@ void ConnectionState(void *userData, const char *rawData, size_t length, size_t 
                     // According to sec 8.3.3 GNSS Compass Signal Health Status
                     // Progress bar
                     print_progress_bar(round(percent_bar));
+                    //
+                    _connStatus.startup_complete = false;
+                }else{
+                    _connStatus.startup_complete = true;
                 }
             }
         }
@@ -401,39 +396,35 @@ void asciiOrBinaryAsyncMessageReceived(void* userData, Packet& p, size_t index){
     nav_msgs::Odometry msgOdom;
     sensor_msgs::Temperature msgTemp;
     sensor_msgs::FluidPressure msgPres;
+    ros::Time ACQ_time = ros::Time::now();
+
+    // Own MSG
+    vectornav::vn_time _TimeSyncIn;
+    vectornav::vn_time _TimeGps;
+    vectornav::vn_time _TimeGpsPps;
+    vectornav::ins_status _INSstatus;
+
     // Time
     if (cd.hasTimeGpsPps()){
         uint64_t TimeGPS_PPS;
-        TimeGPS_PPS = cd.timeGpsPps();  //nano secs since the last GPS PPS trigger
-        msgKey_vnTimeGpsPps.key = "TimeGPS_PPS";
-        msgKey_vnTimeGpsPps.value = std::to_string(TimeGPS_PPS);
-        msgKey_vnTimeGpsPps_timeStamp_sec.key = "TimeStamp_sec";
-        msgKey_vnTimeGpsPps_timeStamp_sec.value = std::to_string(ros::Time::now().toSec());
-        pubTimeGpsPps.publish(msgKey_vnTimeGpsPps);
-        pubTimeGpsPps.publish(msgKey_vnTimeGpsPps_timeStamp_sec);
+        _TimeGpsPps.header.stamp = ACQ_time;
+        _TimeGpsPps.time_value = cd.timeGpsPps();  //nano secs since the last GPS PPS trigger
+        pubTimeGpsPps.publish(_TimeGpsPps);
     }
     if (cd.hasTimeSyncIn()){
         uint64_t TimeSyncIn;
-        TimeSyncIn = cd.timeSyncIn();  //nano secs e time since the last SyncIn trigger
-        msgKey_vnTimeSyncIn.key = "TimeSyncIn";
-        msgKey_vnTimeSyncIn.value = std::to_string(TimeSyncIn);
-        msgKey_vnTimeSyncIn_timeStamp_sec.key = "TimeSyncIn_sec";
-        msgKey_vnTimeSyncIn_timeStamp_sec.value = std::to_string(ros::Time::now().toSec());
-        pubTimeSyncIn.publish(msgKey_vnTimeSyncIn);
-        pubTimeSyncIn.publish(msgKey_vnTimeSyncIn_timeStamp_sec);
+        _TimeSyncIn.header.stamp = ACQ_time;
+        _TimeSyncIn.time_value = cd.timeSyncIn();  //nano secs time since the last SyncIn trigger
+        pubTimeSyncIn.publish(_TimeSyncIn);
     }
     if (cd.hasTimeGps()){
         uint64_t TimeGPS;
-        TimeGPS = cd.timeGps(); // The absolute GPS time since start of GPS epoch 1980 expressed in nano seconds
-        msgKey_vnTimeGps.key = "TimeGPS";
-        msgKey_vnTimeGps.value = std::to_string(TimeGPS);
-        msgKey_vnTimeGps_timeStamp_sec.key = "TimeStamp";
-        msgKey_vnTimeGps_timeStamp_sec.value = std::to_string(ros::Time::now().toSec());
-        pubTimeGps.publish(msgKey_vnTimeGps);
-        pubTimeGps.publish(msgKey_vnTimeGps_timeStamp_sec);
+        _TimeGps.header.stamp = ACQ_time;
+        _TimeGps.time_value = cd.timeGps(); // The absolute GPS time since start of GPS epoch 1980 expressed in nano seconds
+        pubTimeGps.publish(_TimeGps);
     }
     // IMU
-    msgIMU.header.stamp = ros::Time::now();
+    msgIMU.header.stamp = ACQ_time;
     msgIMU.header.frame_id = frame_id;
     if (cd.hasQuaternion() && cd.hasAngularRate() && cd.hasAcceleration()){
         vec4f q = cd.quaternion();
@@ -526,13 +517,21 @@ void asciiOrBinaryAsyncMessageReceived(void* userData, Packet& p, size_t index){
     }
     if (cd.hasYawPitchRoll()){
         vec3f ypr = cd.yawPitchRoll();
-        //cout << "Binary Async YPR: " << ypr << endl;
+    }
+
+    if (cd.hasPositionUncertaintyEstimated()){
+        // The estimated uncertainty (1 Sigma) in the current position estimate, given in meters
+        float INSposU;
+        vectornav::ecef_uncert _INSPos_U;
+        _INSPos_U.header.stamp = ACQ_time;
+        _INSPos_U.ecef_pos_un = cd.positionUncertaintyEstimated();
+        pubECEFun.publish(_INSPos_U);
     }
 
     // Magnetic Field
     if (cd.hasMagnetic()){
         vec3f mag = cd.magnetic();
-        msgMag.header.stamp = msgIMU.header.stamp;
+        msgMag.header.stamp = ACQ_time;
         msgMag.header.frame_id = msgIMU.header.frame_id;
         msgMag.magnetic_field.x = mag[0];
         msgMag.magnetic_field.y = mag[1];
@@ -542,7 +541,7 @@ void asciiOrBinaryAsyncMessageReceived(void* userData, Packet& p, size_t index){
     }
 
     // GPS
-    msgGPS.header.stamp = msgIMU.header.stamp;
+    msgGPS.header.stamp = ACQ_time;
     msgGPS.header.frame_id = frame_id;
     if (cd.hasPositionEstimatedLla() && cd.hasPositionEstimatedEcef() && cd.hasInsStatus()){
         vec3d lla = cd.positionEstimatedLla();
@@ -552,7 +551,7 @@ void asciiOrBinaryAsyncMessageReceived(void* userData, Packet& p, size_t index){
         pubGPS.publish(msgGPS);
         // cout << "Binary Async GPS_LLA: " << lla << endl;
 
-        msgOdom.header.stamp = msgIMU.header.stamp;
+        msgOdom.header.stamp = ACQ_time;
         msgOdom.header.frame_id = msgIMU.header.frame_id;
         vec3d pos = cd.positionEstimatedEcef();
         if (!flag_origin){
@@ -568,25 +567,74 @@ void asciiOrBinaryAsyncMessageReceived(void* userData, Packet& p, size_t index){
         // cout << "Binary Async GPS_ECEF: " << pos << endl;
 
         pubOdom.publish(msgOdom);
+        // INS STATUS
+        uint16_t  INS_status;
+        INS_status = cd.insStatus();
+        /*
+        Indicates the current mode of the INS filter.
+        0 = Not tracking. GNSS Compass is initializing. Output heading is based on
+        magnetometer measurements.
+        1 = Aligning. INS Filter is dynamically aligning. For a stationary startup: GNSS Compass has initialized and INS Filter is
+        aligning from the magnetic heading to the GNSS Compass heading. For a dynamic startup: INS Filter has initialized and is dynamically aligning
+        to True North heading. In operation, if the INS Filter drops from INS Mode 2 back down to 1, the attitude uncertainty has increased above 2 degrees.
+        2 = Tracking. The INS Filter is tracking and operating within specification.
+        3 = Loss of GNSS. A GNSS outage has lasted more than 45 seconds. The INS Filter will no longer update the position and velocity outputs, but the
+        attitude remains valid.
+        */
+        int INS_mode        = INS_status && 0b00000011;
+
+        // Indicates whether the GNSS has a proper fix
+        int INS_GNNSS_Fix   = INS_status && 0b00000100;
+        INS_GNNSS_Fix = INS_GNNSS_Fix  >> 2;
+
+        //Sensor measurement error code. See table below.
+        //0 = No errors detected.
+        // High if IMU communication error is detected.
+        int INS_IMU_error   = INS_status && 0b00010000;
+        INS_IMU_error = INS_IMU_error >> 4;
+        // High if Magnetometer or Pressure sensor error is detected.
+        int INS_MAG_error   = INS_status && 0b00100000;
+        INS_MAG_error = INS_MAG_error >> 5;
+        // High if GNSS communication error is detected
+        int INS_GNSS_error  = INS_status && 0b01000000;
+        INS_GNSS_error = INS_GNSS_error >> 6;
+
+        // In stationary operation, if set the INS Filter has fully aligned to the GNSS
+        //Compass solution.
+        //In dynamic operation, the GNSS Compass solution is currently aiding the INS Filter heading solution.
+        int INS_GNSS_Heading= INS_status && 0b0000000100000000;
+        INS_GNSS_Heading = INS_GNSS_Heading >> 8;
+
+        // Indicates if the GNSS compass is operational and reporting a heading solution.
+        int INS_GNSS_Compass= INS_status && 0b0000001000000000;
+        INS_GNSS_Compass = INS_GNSS_Compass >> 9;
+
+        _INSstatus.header.stamp =     ACQ_time;
+        _INSstatus.ins_mode =         INS_mode;
+        _INSstatus.ins_gnss_fix =     INS_GNNSS_Fix;
+        _INSstatus.ins_imu_error =    INS_IMU_error;
+        _INSstatus.ins_mag_error =    INS_MAG_error;
+        _INSstatus.ins_gnss_error =   INS_GNSS_error;
+        _INSstatus.ins_gnss_heading = INS_GNSS_Heading;
+        _INSstatus.ins_gnss_compass = INS_GNSS_Compass;
+        pubINSstatus.publish(_INSstatus);
     }
 
     // Temperature
     if (cd.hasTemperature()){
         float temp = cd.temperature();
-        msgTemp.header.stamp = msgIMU.header.stamp;
+        msgTemp.header.stamp = ACQ_time;
         msgTemp.header.frame_id = msgIMU.header.frame_id;
         msgTemp.temperature = temp;
         pubTemp.publish(msgTemp);
-        //cout << "Binary Async Temperature: " << temp << endl;
     }
 
     // Barometer
     if (cd.hasPressure()){
         float pres = cd.pressure();
-        msgPres.header.stamp = msgIMU.header.stamp;
+        msgPres.header.stamp = ACQ_time;
         msgPres.header.frame_id = msgIMU.header.frame_id;
         msgPres.fluid_pressure = pres;
-        //cout << "Binary Async Pressure: " << pres << endl;
         pubPres.publish(msgPres);
     }
 
@@ -607,10 +655,12 @@ int main(int argc, char *argv[]) {
     pubOdom    = n.advertise<nav_msgs::Odometry>("vectornav/Odom", 1000);
     pubTemp    = n.advertise<sensor_msgs::Temperature>("vectornav/Temp", 1000);
     pubPres    = n.advertise<sensor_msgs::FluidPressure>("vectornav/Pres", 1000);
-    ConnStatus = n.advertise<diagnostic_msgs::KeyValue>("vectornav/ConnStatus", 1000);
-    GPS_Status = n.advertise<diagnostic_msgs::KeyValue>("vectornav/GPS_Status", 1000);
-    pubTimeSyncIn = n.advertise<diagnostic_msgs::KeyValue>("vectornav/TimeSyncIn", 1000);
-    pubTimeGpsPps = n.advertise<diagnostic_msgs::KeyValue>("vectornav/TimeGpsPps", 1000);
+    pubGPSConStatus = n.advertise<vectornav::gps_conn_status>("vectornav/GPSConStatus", 1000);
+    pubTimeSyncIn = n.advertise<vectornav::vn_time>("vectornav/TimeSyncIn", 1000);
+    pubTimeGpsPps = n.advertise<vectornav::vn_time>("vectornav/TimeGpsPps", 1000);
+    pubTimeGps    = n.advertise<vectornav::vn_time>("vectornav/pubTimeGps", 1000);
+    pubINSstatus  = n.advertise<vectornav::ins_status>("vectornav/INSStatus", 1000);
+    pubECEFun     = n.advertise<vectornav::ecef_uncert>("vectornav/INS_ECEF_Unc", 1000);
 
     // Serial Port Settings
     string SensorPort;
@@ -630,6 +680,7 @@ int main(int argc, char *argv[]) {
     pn.param<std::string>("serial_port", SensorPort, "/dev/ttyUSB0");
     pn.param<int>("serial_baud", SensorBaudrate, 115200);
     pn.param<int>("fixed_imu_rate", SensorImuRate, 800);
+    pn.param<bool>("wait_for_GNSS_startup", wait_for_GNSS_startup, false);
 
     //Call to set covariances
     if (pn.getParam("linear_accel_covariance", rpc_temp)) {
@@ -863,25 +914,26 @@ int main(int argc, char *argv[]) {
             GPSGROUP_NONE,
             ATTITUDEGROUP_YPRU, //<-- returning yaw pitch roll uncertainties
             INSGROUP_INSSTATUS
+                | INSGROUP_POSU
                 | INSGROUP_POSLLA
                 | INSGROUP_POSECEF
                 | INSGROUP_VELBODY
                 | INSGROUP_ACCELECEF,
             GPSGROUP_NONE);
 
-    msgKey_connStatus.key = "ConnStatus[%]";
     vs.registerRawDataReceivedHandler(NULL, ConnectionState);
-    ROS_INFO("Initial calibration ................................................");
+    ROS_INFO("Initial GNSS startup calibration ................................................");
 
-    /*
-    while (flag_connecting && ros::ok())
-    {
-        vs.send("$VNRRG,98"); //GNSS Compass Startup Status. Section 8.3.2
-        vs.send("$VNRRG,86"); //GNSS Compass Signal Health Status. Section 8.3.3
-        ConnStatus.publish(msgKey_connStatus);
+    if (wait_for_GNSS_startup == true) {
+        while (flag_connecting && ros::ok()) {
+            vs.send("$VNRRG,98"); //GNSS Compass Startup Status. Section 8.3.2
+            vs.send("$VNRRG,86"); //GNSS Compass Signal Health Status. Section 8.3.3
+            pubGPSConStatus.publish(_connStatus);
+        }
+    }else{
+        flag_connecting=0;   // Flag connecting = 0 forces avoiud GNSS calibration
     }
-*/
-    flag_connecting=0;   // Flag connecting = 0 forces avoiud GNSS calibration
+
     if(flag_connecting==1){
         ROS_INFO("\t Aborted connection");
     }else{
@@ -894,7 +946,7 @@ int main(int argc, char *argv[]) {
 
     while (!flag_connecting && ros::ok())
     {
-        ConnStatus.publish(msgKey_connStatus);
+        pubGPSConStatus.publish(_connStatus);
     }
 
     vs.unregisterAsyncPacketReceivedHandler();

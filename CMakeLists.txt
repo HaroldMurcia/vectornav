@@ -7,7 +7,33 @@ project(vectornav)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED roscpp)
+find_package(catkin REQUIRED COMPONENTS
+        roscpp
+        sensor_msgs
+        nav_msgs
+        std_msgs
+        message_generation
+        )
+################################################
+## Declare ROS messages, services and actions ##
+################################################
+
+## Generate messages in the 'msg' folder
+add_message_files(
+        FILES
+        vn_time.msg
+        ins_status.msg
+        gps_conn_status.msg
+        ecef_uncert.msg
+)
+
+## Generate added messages and services with any dependencies listed here
+generate_messages(
+        DEPENDENCIES
+        sensor_msgs
+        nav_msgs
+        std_msgs
+)
 
 ###################################
 ## catkin specific configuration ##
@@ -15,7 +41,7 @@ find_package(catkin REQUIRED roscpp)
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES vectornav
-   CATKIN_DEPENDS roscpp sensor_msgs
+   CATKIN_DEPENDS roscpp sensor_msgs nav_msgs std_msgs
 #  DEPENDS system_lib
 )
 

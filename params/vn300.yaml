@@ -27,6 +27,9 @@ tf_ned_to_enu: false
 # If tf_ned_to_enu = true and frame_based_enu = true we rotate the quaternion to the frame matched label by multiplication
 frame_based_enu: false
 
+# Wait for GNSS Compass Startup Status
+wait_for_GNSS_startup: true
+
 # Linear Acceleration Covariances not produced by the sensor
 linear_accel_covariance: [0.01,  0.0,    0.0,
                           0.0,   0.01,   0.0,
