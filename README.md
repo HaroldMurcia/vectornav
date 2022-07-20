@@ -9,7 +9,7 @@ without reliance on vehicle dynamics or magnetic  sensors, providing unmatched
 performance under both static and dynamic conditions.
 
 <p align="center">
-  <img src=media/vn300_rugged.png style="zoom: 20%;">
+  <img src=media/vn300_rugged.png style="zoom: 25%;"/>
 </p>
 
 ### Related info
