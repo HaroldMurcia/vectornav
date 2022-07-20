@@ -8,7 +8,7 @@ GNSS receivers and antennas, the VN-300 enables accurate heading measurements
 without reliance on vehicle dynamics or magnetic  sensors, providing unmatched 
 performance under both static and dynamic conditions.
 
-<img align="center" src="img/test-vn-300-rugged_large.png" style="zoom: 100%;" />
+![photo](/img/test-vn-300-rugged_large.png)
 
 ### Related info
 * Official site: https://www.vectornav.com/products/detail/vn-300
