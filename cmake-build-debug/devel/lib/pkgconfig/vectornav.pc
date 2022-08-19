@@ -1,0 +1,8 @@
+prefix=/home/hmurcia/catkin_ws/src/vectornav/cmake-build-debug/devel
+
+Name: vectornav
+Description: Description of vectornav
+Version: 2.0.0
+Cflags: -I/home/hmurcia/catkin_ws/src/vectornav/cmake-build-debug/devel/include
+Libs: -L${prefix}/lib 
+Requires: roscpp sensor_msgs nav_msgs std_msgs

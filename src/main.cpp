@@ -768,7 +768,9 @@ int main(int argc, char *argv[]) {
 
     // Let's query the sensor's model number.
     string mn = vs.readModelNumber();
+    uint32_t sn = vs.readSerialNumber();
     ROS_INFO("Model Number: %s\n", mn.c_str());
+    ROS_INFO("Serial Number: %d\n", sn);
 
     ROS_INFO("Restarting factory configuration .....................................");
     //vs.restoreFactorySettings();
