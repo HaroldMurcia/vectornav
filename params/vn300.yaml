@@ -28,7 +28,7 @@ tf_ned_to_enu: false
 frame_based_enu: false
 
 # Wait for GNSS Compass Startup Status
-wait_for_GNSS_startup: false
+wait_for_GNSS_startup: true
 
 # Linear Acceleration Covariances not produced by the sensor
 linear_accel_covariance: [0.01,  0.0,    0.0,
@@ -47,6 +47,6 @@ orientation_covariance: [0.01,  0.0,   0.0,
 
 # According to page 35 of vectornav VN-300 user manual doc-version 2.43
 # Position A with respect to IMU [X,Y,Z] in meters
-Antenna_A_offset: [0.0, -0.30, 0.0]
+Antenna_A_offset: [0.1, -0.15, -0.2]
 # Position B with respect to A [X,Y,Z] in meters
-baseline_position: [0.0, 0.52, 0.0]
+baseline_position: [0.0, 0.3, 0.0]

@@ -680,7 +680,7 @@ int main(int argc, char *argv[]) {
     pn.param<std::string>("serial_port", SensorPort, "/dev/ttyUSB0");
     pn.param<int>("serial_baud", SensorBaudrate, 115200);
     pn.param<int>("fixed_imu_rate", SensorImuRate, 800);
-    pn.param<bool>("wait_for_GNSS_startup", wait_for_GNSS_startup, false);
+    pn.param<bool>("wait_for_GNSS_startup", wait_for_GNSS_startup, true);
 
     //Call to set covariances
     if (pn.getParam("linear_accel_covariance", rpc_temp)) {
@@ -927,6 +927,7 @@ int main(int argc, char *argv[]) {
     ROS_INFO("Initial GNSS startup calibration ................................................");
 
     if (wait_for_GNSS_startup == true) {
+        cout << "Esperando respuesta de  satelites" << endl;
         while (flag_connecting && ros::ok()) {
             vs.send("$VNRRG,98"); //GNSS Compass Startup Status. Section 8.3.2
             vs.send("$VNRRG,86"); //GNSS Compass Signal Health Status. Section 8.3.3
